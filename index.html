@@ -38,6 +38,11 @@ VENDA PRESENCIAL
 - Anexar foto.
 </div>
 <h1>Registro de Venda</h1>
+
+<!-- CAMPO DO NÚMERO DO PEDIDO -->
+<label>Número do Pedido</label>
+<input type="text" id="orderNumberField" readonly style="background:#e9ecef;font-weight:bold;margin-bottom:8px;" />
+
 <label>Nome do Cliente</label>
 <input type="text" id="clientName">
 <label>Telefone</label>
@@ -211,10 +216,23 @@ function updateTotals() {
 // Inicializa totais
 updateTotals();
 
+// CONTADOR DE PEDIDOS
 let orderCounter = 1;
 const nextOrder = () => 'W' + String(orderCounter++).padStart(4, '0');
 const peekOrder = () => 'W' + String(orderCounter).padStart(4, '0');
 
+// Atualiza campo do número do pedido no formulário
+function updateOrderNumberField() {
+    document.getElementById('orderNumberField').value = peekOrder();
+}
+updateOrderNumberField();
+
+// Sempre que baixar PDF, atualiza o campo para o próximo número
+function afterDownload() {
+    updateOrderNumberField();
+}
+
+// Função para ler arquivo como DataURL
 function readAsDataURL(file) {
     return new Promise((res, rej) => {
         const reader = new FileReader();
@@ -226,6 +244,8 @@ function readAsDataURL(file) {
 
 // Função para gerar PDF bonito
 async function generatePdfBlob(data) {
+    // ... igual ao seu código ...
+    // (mantido igual)
     const doc = new jsPDF();
     let y = 18, left = 14;
 
@@ -430,6 +450,7 @@ try {
    a.href=url;a.download=pdfName;a.style.display='none';
    document.body.appendChild(a);a.click();setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url)},500);
    document.getElementById('lastSaved').textContent=`PDF gerado e baixado como ${pdfName}`;
+   afterDownload(); // <-- Atualiza campo do número do pedido!
 } catch(err) {
    console.error(err);
    alert("Erro ao gerar PDF.");
