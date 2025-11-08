@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registro de Venda</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+body { font-family: Arial, sans-serif; max-width: 800px; margin: auto; padding: 20px; background: #f7f7f7; }
+h1 { text-align: center; color: #333; }
+label { display: block; margin-top: 10px; font-weight: bold; }
+input, select { width: 100%; padding: 8px; margin-top: 4px; border-radius: 6px; border: 1px solid #ccc; }
+.product-line { display: flex; gap: 10px; margin-top: 5px; }
+.product-line input { flex: 1; }
+.product-line input[type="number"] { width: 80px; }
+button { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-top: 15px; }
+button:hover { background-color: #0056b3; }
+.file-field { margin-top: 10px; }
+.btn-group { display:flex; gap:10px;}
+.instructions { background-color: #e3f0ff; border-left: 6px solid #2196f3; color: #174a6c; padding: 16px; margin-bottom: 18px; font-size: 1.05em; font-weight: bold; white-space: pre-line; }
+.hidden { display:none;}
+#totalValue, #finalValue { background:#e9ecef;font-weight:bold;}
+</style>
+</head>
+<body>
+<div class="instructions">
+Fluxo sugerido:
+VENDA POR WHATSAPP
+- Mandar mensagem de confirmação
+- Printar a tela com a pergunta e a resposta
+- Preencher os dados do cliente, do(s) produto(s) e forma de envio
+- Anexar a foto da confirmação da venda
+- Anexar Nota Fiscal.
+
+VENDA PRESENCIAL
+- Fotografar o produto vendido
+- Preencher dados do cliente e do(s) Produto(s)
+- Anexar foto.
+</div>
+<h1>Registro de Venda</h1>
+<label>Nome do Cliente</label>
+<input type="text" id="clientName">
+<label>Telefone</label>
+<input type="text" id="phone">
+<label>E-mail</label>
+<input type="email" id="email">
+<label>Rua</label>
+<input type="text" id="street">
+<label>Bairro</label>
+<input type="text" id="neighborhood">
+<label>Cidade</label>
+<input type="text" id="city">
+<label>CEP</label>
+<input type="text" id="cep">
+<label>Tipo de Venda</label>
+<select id="saleType">
+    <option value="">Selecione</option>
+    <option value="presencial">Presencial</option>
+    <option value="whatsapp">WhatsApp</option>
+</select>
+<!-- Forma de envio (aparece só para WhatsApp) -->
+<div class="file-field hidden" id="shippingField">
+    <label>Forma de Envio</label>
+    <select id="shippingMethod">
+        <option value="">Selecione</option>
+        <option value="PAC">PAC</option>
+        <option value="SEDEX">SEDEX</option>
+    </select>
+</div>
+<div class="file-field" id="whatsField" style="display:none;">
+    <label>Print da conversa (WhatsApp)</label>
+    <input type="file" id="whatsPrint" accept="image/*">
+</div>
+<div class="file-field" id="photoField" style="display:none;">
+    <label>Foto do produto (Presencial)</label>
+    <input type="file" id="productPhoto" accept="image/*">
+</div>
+
+<h3>Produtos</h3>
+<div id="products"></div>
+
+<!-- Desconto -->
+<div style="margin-top:15px;">
+    <input type="checkbox" id="hasDiscount">
+    <label for="hasDiscount" style="display:inline;font-weight:normal;">Aplicar desconto?</label>
+    <div id="discountFields" class="hidden" style="margin-top:8px;">
+        <input type="number" id="discountValue" placeholder="Valor do desconto" min="0" step="0.01" style="width:120px;">
+        <select id="discountType" style="width:auto;">
+            <option value="reais">R$</option>
+            <option value="percent">%</option>
+        </select>
+    </div>
+</div>
+
+<label style="margin-top:15px;">Valor Total dos Produtos (R$)</label>
+<input type="number" id="totalValue" step="0.01" readonly>
+
+<label>Valor Final com Desconto (R$)</label>
+<input type="number" id="finalValue" step="0.01" readonly>
+
+<label>Forma de Pagamento</label>
+<select id="paymentMethod">
+    <option value="">Selecione</option>
+    <option value="Dinheiro">Dinheiro</option>
+    <option value="Pix">Pix</option>
+    <option value="Cartão">Cartão</option>
+</select>
+
+<div class="file-field hidden" id="installmentsField">
+    <label>Número de Parcelas (Cartão)</label>
+    <select id="installments">
+        <option value="">Selecione</option>
+        <option value="1">1x</option><option value="2">2x</option><option value="3">3x</option><option value="4">4x</option><option value="5">5x</option><option value="6">6x</option><option value="7">7x</option><option value="8">8x</option><option value="9">9x</option><option value="10">10x</option>
+    </select>
+</div>
+
+<div class="file-field">
+    <label>Nota Fiscal (opcional)</label>
+    <input type="file" id="invoice" accept="image/*,application/pdf">
+</div>
+
+<div class="btn-group">
+    <button id="previewPdf">Pré-visualizar PDF</button>
+    <button id="downloadPdf">Baixar PDF</button>
+</div>
+
+<p id="lastSaved" style="margin-top:15px;font-weight:bold;"></p>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+const { jsPDF } = window.jspdf;
+
+// Cria campos de produto
+const prodDiv = document.getElementById('products');
+for (let i = 1; i <= 5; i++) {
+    const div = document.createElement('div');
+    div.className = 'product-line';
+    div.innerHTML = `
+        <input type="text" id="prod_${i}" placeholder="Produto ${i}">
+        <input type="number" id="qty_${i}" placeholder="Qtd" min="1" value="1">
+        <input type="number" id="price_${i}" placeholder="Preço (R$)" min="0" step="0.01">
+    `;
+    prodDiv.appendChild(div);
+}
+
+// Alterna campos conforme tipo de venda
+const saleType = document.getElementById('saleType');
+saleType.addEventListener('change', () => {
+    document.getElementById('whatsField').style.display = saleType.value === 'whatsapp' ? 'block' : 'none';
+    document.getElementById('photoField').style.display = saleType.value === 'presencial' ? 'block' : 'none';
+    document.getElementById('shippingField').classList.toggle('hidden', saleType.value !== 'whatsapp');
+});
+
+// Desconto
+const hasDiscount = document.getElementById('hasDiscount');
+const discountFields = document.getElementById('discountFields');
+hasDiscount.addEventListener('change', () => {
+    discountFields.classList.toggle('hidden', !hasDiscount.checked);
+    updateTotals();
+});
+document.getElementById('discountValue').addEventListener('input', updateTotals);
+document.getElementById('discountType').addEventListener('change', updateTotals);
+
+// Atualiza totais ao mudar produtos
+for (let i=1;i<=5;i++) {
+    document.getElementById(`qty_${i}`).addEventListener('input', updateTotals);
+    document.getElementById(`price_${i}`).addEventListener('input', updateTotals);
+}
+
+// Forma de pagamento e parcelas
+const paymentMethod = document.getElementById('paymentMethod');
+const installmentsField = document.getElementById('installmentsField');
+const installmentsSelect = document.getElementById('installments');
+paymentMethod.addEventListener('change', () => {
+    if(paymentMethod.value === 'Cartão') {
+        installmentsField.classList.remove('hidden');
+    } else {
+        installmentsField.classList.add('hidden');
+        installmentsSelect.value = '';
+    }
+});
+
+function updateTotals() {
+    let total = 0;
+    for (let i=1;i<=5;i++) {
+        const qty = parseFloat(document.getElementById(`qty_${i}`).value) || 0;
+        const price = parseFloat(document.getElementById(`price_${i}`).value) || 0;
+        if (document.getElementById(`prod_${i}`).value.trim()) {
+            total += qty * price;
+        }
+    }
+    document.getElementById('totalValue').value = total.toFixed(2);
+
+    // Desconto
+    let final = total;
+    if (hasDiscount.checked) {
+        let desc = parseFloat(document.getElementById('discountValue').value) || 0;
+        let tipo = document.getElementById('discountType').value;
+        if (desc > 0) {
+            if (tipo === 'percent') {
+                final -= total * (desc/100);
+            } else {
+                final -= desc;
+            }
+        }
+    }
+    if (final<0) final=0;
+    document.getElementById('finalValue').value = final.toFixed(2);
+}
+
+// Inicializa totais
+updateTotals();
+
+let orderCounter = 1;
+const nextOrder = () => 'W' + String(orderCounter++).padStart(4, '0');
+const peekOrder = () => 'W' + String(orderCounter).padStart(4, '0');
+
+function readAsDataURL(file) {
+    return new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+    });
+}
+
+// Função para gerar PDF bonito
+async function generatePdfBlob(data) {
+    const doc = new jsPDF();
+    let y = 18, left = 14;
+
+    // Cabeçalho
+    doc.setFontSize(18);
+    doc.setTextColor(40,40,120);
+    doc.text("Pedido de Venda", left, y);
+    doc.setDrawColor(40,40,120);
+    doc.line(left, y+2, left+180, y+2);
+    y +=10;
+
+    doc.setFontSize(12); doc.setTextColor(0,0,0);
+    doc.text(`Pedido Nº: ${data.orderNumber}`, left, y);
+    doc.text(`Data: ${data.date}`, left+110, y); y +=8;
+
+    // Cliente
+    doc.setFontSize(13); doc.setTextColor(40,40,120); doc.text("Dados do Cliente", left, y); y +=6;
+    doc.setFontSize(11); doc.setTextColor(0,0,0);
+    doc.text(`Nome: ${data.clientName}`, left, y); y +=6;
+    doc.text(`Telefone: ${data.phone}`, left, y); y +=6;
+    doc.text(`E-mail: ${data.email}`, left, y); y +=6;
+    doc.text(`Endereço: ${data.street}, ${data.neighborhood}`, left, y); y +=6;
+    doc.text(`${data.city} - CEP: ${data.cep}`, left, y); y +=8;
+
+    // Forma de envio (se for WhatsApp)
+    if(data.saleType === "whatsapp") {
+        doc.setFontSize(11);doc.setTextColor(40,40,120); doc.text("Forma de Envio:", left, y);
+        doc.setTextColor(0,0,0); doc.text(`${data.shippingMethod || '-'}`, left+35, y); y+=7;
+    }
+
+    // Produtos (tabela)
+    doc.setFontSize(13);doc.setTextColor(40,40,120);doc.text("Produtos", left,y);y+=6;
+    doc.setFontSize(11);doc.setTextColor(0,0,0);
+    // Tabela cabeçalho
+    doc.setFillColor(220,220,255);doc.rect(left-2,y-5,140,8,'F');
+    doc.text("Produto", left,y); doc.text("Qtd",left+70,y); doc.text("Preço Un.",left+90,y); doc.text("Subtotal",left+120,y); y+=6;
+    data.products.forEach(p => {
+        doc.text(`${p.name || '-'}`,left,y);
+        doc.text(`${p.qty || '0'}`,left+70,y);
+        doc.text(`R$ ${p.price.toFixed(2)}`,left+90,y);
+        doc.text(`R$ ${(p.qty*p.price).toFixed(2)}`,left+120,y);
+        y+=6;if(y>270){doc.addPage();y=18;}
+    });y+=4;
+
+    // Totais e pagamento
+    doc.setFontSize(12);doc.setTextColor(40,40,120);doc.text(`Valor Total dos Produtos:`,left,y);
+    doc.setTextColor(0,0,0);doc.text(`R$ ${data.totalValue}`,left+60,y);y+=7;
+
+    if(data.hasDiscount && data.discountValue > 0){
+        let descStr = data.discountType === "percent" ? `${data.discountValue}%` : `R$ ${parseFloat(data.discountValue).toFixed(2)}`;
+        doc.setFontSize(11);doc.setTextColor(180,60,60);
+        doc.text(`Desconto aplicado (${descStr})`,left,y); y+=6;
+        doc.setTextColor(40,40,120); doc.setFontSize(12);
+        doc.text(`Valor Final com Desconto:`,left,y);
+        doc.setTextColor(0,0,0);doc.text(`R$ ${data.finalValue}`,left+60,y);y+=7;
+    } else {
+        doc.setFontSize(12);doc.setTextColor(40,40,120);
+        doc.text(`Valor Final com Desconto:`,left,y);
+        doc.setTextColor(0,0,0);doc.text(`R$ ${data.finalValue}`,left+60,y);y+=7;
+    }
+
+    // Pagamento e parcelas
+    doc.setFontSize(11);doc.setTextColor(40,40,120);doc.text(`Pagamento:`,left,y);
+    doc.setTextColor(0,0,0);doc.text(`${data.paymentMethod}`,left+30,y);y+=7;
+
+    if(data.paymentMethod==='Cartão' && data.installments){
+        const parcelaValor = (parseFloat(data.finalValue)/parseInt(data.installments)).toFixed(2);
+        doc.setFontSize(11);doc.setTextColor(40,40,120);doc.text(`Parcelamento:`,left,y);
+        doc.setTextColor(0,0,0);doc.text(`${data.installments}x de R$ ${parcelaValor}`,left+35,y);y+=7;
+    }
+
+    doc.setFontSize(11);doc.setTextColor(40,40,120);doc.text(`Tipo de Venda:`,left,y);
+    doc.setTextColor(0,0,0);doc.text(`${data.saleType}`,left+35,y);y+=10;
+
+    // Imagens
+    if (data.images && data.images.length) {
+        for (const img of data.images) {
+            if (y +70 >280){doc.addPage();y=18;}
+            try{
+                doc.setFontSize(11);doc.setTextColor(40,40,120);
+                doc.text(img.label,left,y);y+=6;
+                doc.addImage(img.dataURL,'JPEG',left,y,80,60);y+=66;
+            }catch(e){console.warn('Erro ao incluir imagem:',e);}
+        }y+=4;doc.setTextColor(0,0,0);doc.setFontSize(11);
+    }
+    return doc.output('blob');
+}
+
+// Coleta dados do formulário
+async function getFormData(orderNum) {
+const dateNow = new Date().toLocaleString();
+const clientName = document.getElementById('clientName').value.trim();
+const phone = document.getElementById('phone').value.trim();
+const email = document.getElementById('email').value.trim();
+const street = document.getElementById('street').value.trim();
+const neighborhood = document.getElementById('neighborhood').value.trim();
+const city = document.getElementById('city').value.trim();
+const cep = document.getElementById('cep').value.trim();
+const paymentMethodVal = document.getElementById('paymentMethod').value;
+const installmentsVal = paymentMethodVal === "Cartão" ? document.getElementById('installments').value : '';
+const saleTypeVal = document.getElementById('saleType').value;
+// Forma de envio (só para WhatsApp)
+let shippingMethod = "";
+if(saleTypeVal === "whatsapp") {
+   shippingMethod = document.getElementById('shippingMethod').value;
+}
+// Produtos
+const products = [];
+let totalValue=0;
+for (let i=1;i<=5;i++) {
+   const name = document.getElementById(`prod_${i}`).value.trim();
+   const qty = parseFloat(document.getElementById(`qty_${i}`).value)||1;
+   const price = parseFloat(document.getElementById(`price_${i}`).value)||0;
+   if (name) {
+       products.push({name, qty, price});
+       totalValue += qty*price;
+   }
+}
+// Desconto
+let hasDiscount=document.getElementById('hasDiscount').checked;
+let discountValue=hasDiscount?parseFloat(document.getElementById('discountValue').value)||0:0;
+let discountType=hasDiscount?document.getElementById('discountType').value:'reais';
+let finalValue=totalValue;
+if(hasDiscount && discountValue>0){
+   if(discountType==='percent'){
+       finalValue -= totalValue*(discountValue/100);
+   }else{
+       finalValue -= discountValue;
+   }
+   if(finalValue<0)finalValue=0;
+}
+const whatsFile = document.getElementById('whatsPrint').files[0];
+const photoFile = document.getElementById('productPhoto').files[0];
+const invoiceFile = document.getElementById('invoice').files[0];
+const images=[];
+if (saleTypeVal==='whatsapp' && whatsFile) images.push({label:'Print da conversa', dataURL: await readAsDataURL(whatsFile)});
+if (saleTypeVal==='presencial' && photoFile) images.push({label:'Foto do produto', dataURL: await readAsDataURL(photoFile)});
+if (invoiceFile && invoiceFile.type.startsWith('image/')) images.push({label:'Nota Fiscal', dataURL: await readAsDataURL(invoiceFile)});
+return {
+   orderNumber: orderNum,
+   date: dateNow,
+   clientName,
+   phone,
+   email,
+   street,
+   neighborhood,
+   city,
+   cep,
+   products,
+   totalValue: totalValue.toFixed(2),
+   hasDiscount,
+   discountValue,
+   discountType,
+   finalValue: finalValue.toFixed(2),
+   paymentMethod: paymentMethodVal,
+   installments: installmentsVal,
+   saleType:saleTypeVal,
+   shippingMethod,
+   images
+};
+}
+
+// Botão baixar PDF
+document.getElementById('downloadPdf').addEventListener('click', async () => {
+try {
+   const orderNum = nextOrder();
+   const data = await getFormData(orderNum);
+   // Validação básica
+   if (!data.clientName || !data.phone || !data.email || data.products.length===0 || !data.saleType) {
+       alert('Preencha todos os campos obrigatórios.');
+       return;
+   }
+   if (data.saleType==='whatsapp') {
+       if (!document.getElementById('whatsPrint').files[0]) {
+           alert('Anexe o print da conversa.');
+           return;
+       }
+       if (!data.shippingMethod) {
+           alert('Selecione a forma de envio.');
+           return;
+       }
+   }
+   if (data.saleType==='presencial' && !document.getElementById('productPhoto').files[0]) {
+       alert('Anexe a foto do produto.');
+       return;
+   }
+   if(!data.paymentMethod){
+       alert("Selecione a forma de pagamento.");
+       return;
+   }
+   if(data.paymentMethod==='Cartão' && !data.installments){
+       alert("Selecione o número de parcelas.");
+       return;
+   }
+   const pdfBlob = await generatePdfBlob(data);
+   // Baixar PDF
+   const safeName = data.clientName.replace(/[^a-z0-9\-_ ]/ig,'').replace(/\s+/g,'_');
+   const pdfName = `${orderNum}_${safeName}.pdf`;
+   const url = URL.createObjectURL(pdfBlob);
+   // Cria link temporário para download
+   const a=document.createElement('a');
+   a.href=url;a.download=pdfName;a.style.display='none';
+   document.body.appendChild(a);a.click();setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url)},500);
+   document.getElementById('lastSaved').textContent=`PDF gerado e baixado como ${pdfName}`;
+} catch(err) {
+   console.error(err);
+   alert("Erro ao gerar PDF.");
+}
+});
+
+// Pré-visualizar PDF
+document.getElementById('previewPdf').addEventListener('click', async () => {
+try {
+   const orderNum = peekOrder();
+   const data = await getFormData(orderNum);
+   // Não exige validação para prévia
+   const pdfBlob = await generatePdfBlob(data);
+   // Abre em nova aba
+   const url=URL.createObjectURL(pdfBlob);
+   window.open(url,'_blank');
+} catch(e) {
+   console.error(e);
+   alert("Erro na pré-visualização.");
+}
+});
+});
+</script>
+
+</body>
+</html>
